@@ -17,4 +17,65 @@ library(knitr)
 library(haven)
 library(scales)
 library(fs)
+library(janitor)
+```
+
+```{r echo = FALSE,  error = FALSE, message = FALSE, warning = FALSE}
+
+  ## Automate the process of downloading and unzipping files 
+
+download.file("https://goo.gl/ZRCBda","poll.zip", quiet = TRUE)
+unzip("poll.zip")
+
+file_names <- dir_ls("2018-live-poll-results-master/data")
+
+  ## Use the map_df function to read all the files.
+  ## Specify .id = source to display the source or file name next to each observation.
+  ## Using str_remove_all, remove the beginning of all source names,
+  ## only keeping the end part that distinguishes different files.
+  ## This will make it easier to deal with the file names in the future. 
+
+data <- map_df(file_names, read_csv, .id = "source") %>%
+  mutate(source = str_remove_all(source, pattern = "2018-live-poll-results-master/data/elections-poll-"))
+```
+
+```{r}
+forecast <-
+  data %>%
+  mutate(office_district = str_sub(source, 3, -7)) %>%
+  mutate(office_district = str_remove(office_district, "^0+")) %>%
+
+  
+  mutate(state = str_sub(source, 1, 2)) %>%
+  mutate(wave = str_sub(source, -5, -5)) %>%
+  select(state, office_district, wave, final_weight, response)
+
+forecast <-
+forecast %>%
+  filter(office_district != "gov" & office_district != "sen") %>%
+  mutate(state = str_to_upper(state)) %>%
+  unite("district", "state", "office_district", sep = "-") %>% 
+  mutate(response = case_when(
+           response == "Dem" ~ "Dem",
+           response == "Rep" ~ "Rep",
+           response == "Und" ~ "Und", 
+           response == "3" ~ "3",
+           response == "4" ~ "4",
+           response == "5" ~ "5")) 
+
+forecast_new <-
+  forecast %>% 
+  group_by(district, wave, response) %>% 
+  count(wt = final_weight) %>% 
+  spread(response, n, fill = 0) %>% 
+  mutate(all = Dem + Rep + Und + `3` + `4` + `5`) %>% 
+  mutate(adv_rep = ((Rep - Dem)/all)) %>% 
+  select(district, wave, adv_rep) %>% 
+  adorn_pct_formatting(digits=0)
+  
+```
+
+
+
+
 ```
