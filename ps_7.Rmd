@@ -54,7 +54,7 @@ forecast <-
 forecast %>%
   filter(office_district != "gov" & office_district != "sen") %>%
   mutate(state = str_to_upper(state)) %>%
-  unite("district", "state", "office_district", sep = "-") %>% 
+  unite(district, c("state", "office_district"), sep = "-") %>% 
   mutate(response = case_when(
            response == "Dem" ~ "Dem",
            response == "Rep" ~ "Rep",
@@ -72,7 +72,52 @@ forecast_new <-
   mutate(adv_rep = ((Rep - Dem)/all)) %>% 
   select(district, wave, adv_rep) %>% 
   adorn_pct_formatting(digits=0)
+
+forecast_new
   
+```
+
+```{r}
+actual <- read_csv("ps_7_data_real.csv")
+
+actual <- 
+  actual %>%
+  filter(district != "gov" & district != "sen") %>%
+  mutate(district = str_remove(district, "^0+")) %>%
+  unite(district, c("state", "district"), sep = "-") %>% 
+  mutate(all_votes = `dem_votes` + `rep_votes` + `other_votes`) %>% 
+  mutate(adv_rep_actual = ((`rep_votes` - `dem_votes`)/all_votes)) %>%
+  adorn_pct_formatting(digits=0) %>%
+  select(district, adv_rep_actual)
+
+  
+joined <- 
+  inner_join(forecast_new, actual, by = "district") %>%
+  mutate(adv_rep_forecast = parse_number(adv_rep),
+         adv_rep_actual = parse_number(adv_rep_actual)) %>%
+  select(district, wave, adv_rep_actual, adv_rep_forecast)
+
+
+polled_once <- 
+  joined %>%
+  group_by(district) %>%
+  mutate(distinct = n_distinct(wave)) %>%
+  filter(distinct == 1)
+
+polled_once
+
+polled_twice <-
+joined %>%
+  group_by(district) %>%
+  mutate(distinct = n_distinct(wave)) %>%
+  filter(distinct == 2) %>%
+  mutate(iteration = case_when(
+         wave %in% c(1, 2) ~ 1,
+         wave == 3 ~ 2)) %>%
+  select(district, iteration, adv_rep_actual, adv_rep_forecast)
+
+polled_twice
+
 ```
 
 
