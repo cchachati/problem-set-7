@@ -1,0 +1,20 @@
+---
+title: "Problem Set 7"
+output: html_document
+date: "11/18/2018"
+author: Cayanne Chachati and Ghada Amer 
+---
+
+```{r setup, include=FALSE, error = FALSE, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(stringr)
+library(ggplot2)
+library(kableExtra)
+library(rebus)
+library(lubridate)
+library(knitr)
+library(haven)
+library(scales)
+library(fs)
+```
