@@ -18,6 +18,9 @@ library(haven)
 library(scales)
 library(fs)
 library(janitor)
+library(moderndive)
+library(pspearman)
+library(ggpubr)
 ```
 
 ```{r echo = FALSE,  error = FALSE, message = FALSE, warning = FALSE}
@@ -37,6 +40,8 @@ file_names <- dir_ls("2018-live-poll-results-master/data")
 
 data <- map_df(file_names, read_csv, .id = "source") %>%
   mutate(source = str_remove_all(source, pattern = "2018-live-poll-results-master/data/elections-poll-"))
+
+data
 ```
 
 ```{r}
@@ -47,8 +52,7 @@ forecast <-
 
   
   mutate(state = str_sub(source, 1, 2)) %>%
-  mutate(wave = str_sub(source, -5, -5)) %>%
-  select(state, office_district, wave, final_weight, response)
+  mutate(wave = str_sub(source, -5, -5))
 
 forecast <-
 forecast %>%
@@ -63,6 +67,152 @@ forecast %>%
            response == "4" ~ "4",
            response == "5" ~ "5")) 
 
+forecast_once <- 
+  forecast %>%
+  group_by(district) %>%
+  mutate(distinct = n_distinct(wave)) %>%
+  filter(distinct == 1)
+
+  
+forecast_twice <- 
+  forecast %>%
+  group_by(district) %>%
+  mutate(distinct = n_distinct(wave)) %>%
+  filter(distinct == 2) %>%
+  filter(wave == 3)
+
+latest <- 
+  bind_rows(forecast_once, forecast_twice) %>%
+  select(district, response, ager, final_weight, educ, race_eth)
+
+
+latest_adv_rep <- 
+  latest %>%
+  group_by(district, response) %>% 
+  count(wt = final_weight) %>% 
+  spread(response, n, fill = 0) %>% 
+  mutate(all = Dem + Rep + Und + `3` + `4` + `5`) %>% 
+  mutate(adv_rep = ((Rep - Dem)/all)) %>%
+  adorn_pct_formatting(digits=0) %>%
+  select(district, adv_rep)
+```
+
+```{r}
+educ <-
+  latest %>%
+  filter(!educ %in% c("[DO NOT READ] Don't know/Refused", "[DO NOT READ] Refused")) %>%
+  group_by(district, educ) %>%
+  count(wt = final_weight) %>%
+  ungroup()
+
+educ <-
+  educ %>%
+  group_by(district) %>%
+  mutate(sum = sum(n)) %>%
+  ungroup()
+
+educ <- 
+  educ %>%
+  group_by(district, educ) %>%
+  mutate(percentage = n/sum) %>%
+  select(district, educ, percentage) %>%
+  adorn_pct_formatting(digits=0)
+
+
+join_educ <-
+  left_join(educ, latest_adv_rep, by = "district") %>%
+  mutate(percentage = parse_number(percentage),
+         adv_rep = parse_number(adv_rep))
+
+plot_educ <- 
+join_educ %>%
+  ggplot(aes(x = percentage, y = adv_rep)) + geom_jitter() +
+  geom_smooth(method = lm, se= FALSE) + facet_wrap(~educ) + theme_light() + 
+  labs(x = "Percentage of Responds in each Education", y = "Advantage Republican")
+
+plot_educ + stat_cor(method = "pearson", label.x = 3, label.y = 20, size = 3, output.type = "text")
+
+```
+
+```{r}
+age <-
+  latest %>%
+  filter(!ager %in% c("[DO NOT READ] Don't know/Refused", "[DO NOT READ] Refused")) %>%
+  group_by(district, ager) %>%
+  count(wt = final_weight) %>%
+  ungroup()
+
+age <-
+  age %>%
+  group_by(district) %>%
+  mutate(sum = sum(n)) %>%
+  ungroup()
+
+age <- 
+  age %>%
+  group_by(district, ager) %>%
+  mutate(percentage = n/sum) %>%
+  select(district, ager, percentage) %>%
+  adorn_pct_formatting(digits=0)
+
+
+join_age <-
+  left_join(age, latest_adv_rep, by = "district") %>%
+  mutate(percentage = parse_number(percentage),
+         adv_rep = parse_number(adv_rep))
+
+plot_age <- 
+join_age %>%
+  ggplot(aes(x = percentage, y = adv_rep)) + geom_jitter() +
+  geom_smooth(method = lm, se= FALSE) + facet_wrap(~ager) + theme_light(base_size = 11) + 
+  labs(x = "Percentage of Responds in each Education", y = "Advantage Republican")
+
+plot_age + stat_cor(method = "pearson", label.x = 3, label.y = 20, size = 3, output.type = "text")
+
+```
+
+```{r}
+race <-
+  latest %>%
+  filter(!race_eth %in% c("[DO NOT READ] Don't know/Refused")) %>%
+  group_by(district, race_eth) %>%
+  count(wt = final_weight) %>%
+  ungroup()
+
+race <-
+  race %>%
+  group_by(district) %>%
+  mutate(sum = sum(n)) %>%
+  ungroup()
+
+race <- 
+  race %>%
+  group_by(district, race_eth) %>%
+  mutate(percentage = n/sum) %>%
+  select(district, race_eth, percentage) %>%
+  adorn_pct_formatting(digits=0)
+
+
+join_race <-
+  left_join(race, latest_adv_rep, by = "district") %>%
+  mutate(percentage = parse_number(percentage),
+         adv_rep = parse_number(adv_rep))
+
+
+plot_race <- 
+join_race %>%
+  ggplot(aes(x = percentage, y = adv_rep)) + geom_jitter(width = 5) +
+  geom_smooth(method = lm, se= FALSE) + facet_wrap(~race_eth) + theme_light(base_size = 11) + 
+  labs(title = "hello",
+       x = "Percentage of Responds in each Education", y = "Advantage Republican")
+
+plot_race + stat_cor(method = "pearson", label.x = 3, label.y = 20, size = 3, output.type = "text")
+
+
+```
+
+
+
 forecast_new <-
   forecast %>% 
   group_by(district, wave, response) %>% 
@@ -73,53 +223,10 @@ forecast_new <-
   select(district, wave, adv_rep) %>% 
   adorn_pct_formatting(digits=0)
 
-forecast_new
+forecast_new 
   
 ```
-
-```{r}
-actual <- read_csv("ps_7_data_real.csv")
-
-actual <- 
-  actual %>%
-  filter(district != "gov" & district != "sen") %>%
-  mutate(district = str_remove(district, "^0+")) %>%
-  unite(district, c("state", "district"), sep = "-") %>% 
-  mutate(all_votes = `dem_votes` + `rep_votes` + `other_votes`) %>% 
-  mutate(adv_rep_actual = ((`rep_votes` - `dem_votes`)/all_votes)) %>%
-  adorn_pct_formatting(digits=0) %>%
-  select(district, adv_rep_actual)
-
-  
-joined <- 
-  inner_join(forecast_new, actual, by = "district") %>%
-  mutate(adv_rep_forecast = parse_number(adv_rep),
-         adv_rep_actual = parse_number(adv_rep_actual)) %>%
-  select(district, wave, adv_rep_actual, adv_rep_forecast)
-
-
-polled_once <- 
-  joined %>%
-  group_by(district) %>%
-  mutate(distinct = n_distinct(wave)) %>%
-  filter(distinct == 1)
-
-polled_once
-
-polled_twice <-
-joined %>%
-  group_by(district) %>%
-  mutate(distinct = n_distinct(wave)) %>%
-  filter(distinct == 2) %>%
-  mutate(iteration = case_when(
-         wave %in% c(1, 2) ~ 1,
-         wave == 3 ~ 2)) %>%
-  select(district, iteration, adv_rep_actual, adv_rep_forecast)
-
-polled_twice
-
-```
-
+=
 
 
 
