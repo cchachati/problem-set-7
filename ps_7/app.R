@@ -137,8 +137,8 @@ server <- function(input, output) {
       theme_light() + 
       labs(title = "Percentage of Respondents per Age Group vs. Predicted Republican Advantage",
            subtitle = "At a 95% confidence interval, there is a negative correlation between predicted republican
-           advantage and the age category of 18 to 34, and a positive correlation with the age 
-           category of 65 and older. This relationship is observed when all districts are displayed.",
+advantage and the age category of 18 to 34, and a positive correlation with the age 
+category of 65 and older. This relationship is observed when all districts are displayed.",
            x ="Percentage of Respondents (%)",
            y = "Predicted Republican Advantage (%)",
            color = "Winning Party") + 
@@ -211,8 +211,8 @@ server <- function(input, output) {
             axis.title = element_text(size = 14)) + 
       labs(title = "Percentage of Respondents per Educational Level vs. Predicted Republican Advantage",
            subtitle = "At a 95% confidence interval,there is a negative relationship between predicted republican advantage
-           and educational level at or above a Bachelor's degree, and positive relationship at or below 
-           Some college or trade school. This general trend varies slightly depending on the districts selected.",
+and educational level at or above a Bachelor's degree, and positive relationship at or below 
+Some college or trade school. This general trend varies slightly depending on the districts selected.",
            x = "Percentage of Respondents (%)",
            y = "Predicted Republican Advantage (%)",
            color = "Winning Party") + 
@@ -265,7 +265,7 @@ server <- function(input, output) {
       theme_light() + 
       labs(title = "Percentage of Respondents per Racial Group vs. Predicted Republican Advantage",
            subtitle = "Overall, at a 95% confidence interval, a consistent relationship between 
-           racial group and predicted republican advantage does not exist. ",
+racial group and predicted republican advantage does not exist. ",
            x = "Percentage of Respondents (%)",
            y = "Predicted Republican Advantage (%)",
            color = "Winning Party") + 
