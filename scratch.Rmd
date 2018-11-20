@@ -1,0 +1,315 @@
+---
+title: "Problem Set 7"
+output: html_document
+date: "11/20/2018"
+author: Cayanne Chachati and Ghada Amer 
+---
+
+```{r setup, include=FALSE, error = FALSE, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(stringr)
+library(ggplot2)
+library(kableExtra)
+library(rebus)
+library(lubridate)
+library(knitr)
+library(haven)
+library(scales)
+library(fs)
+library(janitor)
+library(moderndive)
+library(pspearman)
+library(ggpubr)
+```
+
+```{r echo = FALSE,  error = FALSE, message = FALSE, warning = FALSE}
+
+  ## In this code chunk, we automated the process of downloading and unzipping files. 
+
+download.file("https://goo.gl/ZRCBda","poll.zip", quiet = TRUE, mode = "wb")
+unzip("poll.zip")
+
+file_names <-
+  dir_ls("2018-live-poll-results-master/data")
+
+  ## Used the map_df function to read all the files.
+  ## Specified .id = source to display the source or file name next to each observation.
+  ## Using str_remove_all, removed the beginning of all source names,
+  ## only keeping the end part that distinguishes different files.
+  ## This will make it easier to deal with the file names in the future. 
+  ## Also, read in Mr. Schroeder's data from Piazza as a csv file. 
+
+data <- 
+  map_df(file_names, read_csv, .id = "source") %>%
+  mutate(source = str_remove_all(source, pattern = "2018-live-poll-results-master/data/elections-poll-"))
+
+
+actual_results <-
+  read_csv("ps_7_data_real.csv")
+
+
+```
+
+```{r clean}
+ ## In the code chunk below, we used str_sub to create new
+  ## state, wave and office/district variables by subsetting 
+  ## the variable For the office/district variable, values 
+  ## "sen" and "gov" represent the non-houses races with 
+  ## no district numbers. We created a new data frame called 
+  ## forecast with these new variables to be used 
+  ## later.  
+
+forecast <-
+  data %>%
+  mutate(office_district = str_sub(source, 3, -7)) %>%
+  mutate(office_district = str_remove(office_district, "^0+")) %>%
+  mutate(state = str_sub(source, 1, 2)) %>%
+  mutate(wave = str_sub(source, -5, -5))
+
+  ## In the code chunk below, we first filtered out observations
+  ## for non-house races. We also changed the state values 
+  ## into uppercase for formatting purposes. We united state and
+  ## district values into a single column. We also
+  # recoded response values to manipulate later. 
+
+forecast <-
+forecast %>%
+  filter(office_district != "gov" & office_district != "sen") %>%
+  mutate(state = str_to_upper(state)) %>%
+  unite(district, c("state", "office_district"), sep = "-") %>% 
+  mutate(response = case_when(
+           response == "Dem" ~ "Dem",
+           response == "Rep" ~ "Rep",
+           response == "Und" ~ "Und", 
+           response == "3" ~ "3",
+           response == "4" ~ "4",
+           response == "5" ~ "5")) 
+
+  ## In this code chunk, we wanted to only use the actual results
+  ## of the winning party in each district. We filtered out  
+  ## all non-house races, united state and district into a single column,
+  ## and selected for the district and corresponding winning party variables. 
+  ## This will be joined later to our data frames. 
+
+actual_results <-
+  actual_results %>% 
+  filter(!(district %in% c("gov", "sen"))) %>% 
+  mutate(district = str_remove(district, "^0+")) %>%
+  unite(district, c("state", "district"), sep = "-") %>% 
+  select(district, win_party)
+```
+
+```{r Join Data}
+
+  ## In the following code chunks, we wanted to separate the observations
+  ## by the number of times each district was polled. To do this,
+  ## we grouped the data by district, counted the number of distinct waves
+  ## per district. Then separately filtered once for distinct = 1 and another time for
+  ## distinct = 2. For districts polled twice, we filtered for wave = 3 in order to 
+  ## keep only the latest poll. 
+
+polled_once <- 
+  forecast %>%
+  group_by(district) %>%
+  mutate(distinct = n_distinct(wave)) %>%
+  filter(distinct == 1)
+
+  
+polled_twice <- 
+  forecast %>%
+  group_by(district) %>%
+  mutate(distinct = n_distinct(wave)) %>%
+  filter(distinct == 2) %>%
+  filter(wave == 3)
+
+  ## We then bound the two data frames above into one and 
+  ## selected for the variables we need later. This combined data frame
+  ## contains only the latest polls for all non-house races. 
+
+latest <- 
+  bind_rows(polled_once, polled_twice) %>%
+  select(district, response, ager, final_weight, educ, race_eth)
+
+  ## In the following chunk, we calculated the republican advantage. 
+  ## We first grouped by district and response, calculated a weighted count for the 
+  ## grouped data frame and spread this response-n  pair across all columns.
+  ## To remove NAs, we filled missing values with 0. Then, we calculated republican
+  ## advantage as the difference between Rep and Dem respones over the total responses.
+  ## We formatted the values as percentages and selected the variables we need.
+
+latest_adv_rep <- 
+  latest %>%
+  group_by(district, response) %>% 
+  count(wt = final_weight) %>% 
+  spread(response, n, fill = 0) %>% 
+  mutate(all = Dem + Rep + Und + `3` + `4` + `5`) %>% 
+  mutate(adv_rep = ((Rep - Dem)/all)) %>%
+  adorn_pct_formatting(digits=0) %>%
+  select(district, adv_rep)
+
+
+```
+
+```{r Education Variable}
+  ## In the following, we wanted to manipulate the education variable
+  ## to represent with a plot later on. We first filtered out observations
+  ## of Dk/Refused and Refused because we felt they would not add much to 
+  ## describing a potential relationship with republican advantage. We 
+  ## grouped the data by district and educ and calculated a weighted count
+  ## of the groups. After ungrouping, we grouped by district to calculate
+  ## a summarized count of educ responses per district. After ungrouping again,
+  ## we grouped by district and educ, then calculated the percentage of responses 
+  ## per education category per district. Now, for each district, we have 
+  ## values for the percentage of respondants in each educational level.
+
+educ <-
+  latest %>%
+  filter(!educ %in% c("[DO NOT READ] Don't know/Refused", "[DO NOT READ] Refused")) %>%
+  group_by(district, educ) %>%
+  count(wt = final_weight) %>%
+  ungroup()
+
+
+educ <-
+  educ %>%
+  group_by(district) %>%
+  mutate(sum = sum(n)) %>%
+  ungroup()
+
+educ <- 
+  educ %>%
+  group_by(district, educ) %>%
+  mutate(percentage = n/sum) %>%
+  select(district, educ, percentage) %>%
+  adorn_pct_formatting(digits=0) %>%
+  ungroup()
+
+  ## We then joined our education data frame with our calculations
+  ## of republican advantage, using district as a key. We also
+  ## parsed the values a numbers so we can manipulate them later.
+
+
+join_educ <-
+  left_join(educ, latest_adv_rep, by = "district") %>%
+  mutate(percentage = parse_number(percentage),
+         adv_rep = parse_number(adv_rep)) 
+         
+  ## We also joined our data frame with the results of which 
+  ## party actually won the race in each district. 
+
+
+join_educ <-
+  left_join(educ, latest_adv_rep, by = "district") %>%
+  mutate(percentage = parse_number(percentage),
+         adv_rep = parse_number(adv_rep))
+
+educ_win_party <-
+  inner_join(join_educ, actual_results, by = "district") %>% 
+  mutate(win_party = case_when(
+    win_party == "R" ~ "Republican",
+    win_party == "D" ~ "Democrat", 
+    win_party == "UNDECIDED" ~ "Undecided")) %>%
+  mutate(win_party = as.factor(win_party)) %>%
+  mutate(educ = case_when(
+    educ == "Bachelors' degree" ~ "Bachelors' Degree",
+    educ == "Grade school" ~ "Grade School",
+    educ == "Graduate or Professional Degree" ~ "Graduate or Professional Degree",
+    educ == "High school" ~ "High School",
+    educ == "Some college or trade school" ~ "Some College or Trade School"))
+
+
+write_rds(educ_win_party, "educ_variable.rds")
+
+
+
+```
+
+```{r Age Variable}
+
+  ## In the following, we repeated the same process we did for 
+  ## the education variable above for the age variable. 
+  
+age <-
+  latest %>%
+  filter(!ager %in% c("[DO NOT READ] Don't know/Refused", "[DO NOT READ] Refused")) %>%
+  group_by(district, ager) %>%
+  count(wt = final_weight) %>%
+  ungroup()
+
+age <-
+  age %>%
+  group_by(district) %>%
+  mutate(sum = sum(n)) %>%
+  ungroup()
+
+age <- 
+  age %>%
+  group_by(district, ager) %>%
+  mutate(percentage = n/sum) %>%
+  select(district, ager, percentage) %>%
+  adorn_pct_formatting(digits=0)
+
+
+join_age <-
+  left_join(age, latest_adv_rep, by = "district") %>%
+  mutate(percentage = parse_number(percentage),
+         adv_rep = parse_number(adv_rep))
+
+age_win_party <-
+  inner_join(join_age, actual_results, by = "district") %>%
+  mutate(win_party = case_when(
+    win_party == "R" ~ "Republican",
+    win_party == "D" ~ "Democrat", 
+    win_party == "UNDECIDED" ~ "Undecided"))
+
+write_rds(age_win_party, "age_variable.rds")
+
+
+```
+
+```{r Race Variable}
+
+  ## In the following, we repeated the same process we did for 
+  ## the education and age variables above for the race variable.
+
+race <-
+  latest %>%
+  filter(!race_eth %in% c("[DO NOT READ] Don't know/Refused")) %>%
+  group_by(district, race_eth) %>%
+  count(wt = final_weight) %>%
+  ungroup()
+
+race <-
+  race %>%
+  group_by(district) %>%
+  mutate(sum = sum(n)) %>%
+  ungroup()
+
+race <- 
+  race %>%
+  group_by(district, race_eth) %>%
+  mutate(percentage = n/sum) %>%
+  select(district, race_eth, percentage) %>%
+  adorn_pct_formatting(digits=0)
+
+
+join_race <-
+  left_join(race, latest_adv_rep, by = "district") %>%
+  mutate(percentage = parse_number(percentage),
+         adv_rep = parse_number(adv_rep))
+
+race_win_party <-
+inner_join(join_race, actual_results, by = "district") %>%
+   mutate(win_party = case_when(
+    win_party == "R" ~ "Republican",
+    win_party == "D" ~ "Democrat", 
+    win_party == "UNDECIDED" ~ "Undecided"))
+
+
+write_rds(race_win_party, "race_variable.rds")
+
+
+```
+    
+     
